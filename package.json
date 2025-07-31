@@ -1,0 +1,26 @@
+{
+  "name": "ohousecrawler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "google_sheets_data.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ghwj12/ohouseCrawler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ghwj12/ohouseCrawler/issues"
+  },
+  "homepage": "https://github.com/ghwj12/ohouseCrawler#readme",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "googleapis": "^154.1.0",
+    "puppeteer": "^24.15.0"
+  }
+}
