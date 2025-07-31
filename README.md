@@ -29,4 +29,4 @@
 - **google_sheets_data.js** : 구글 시트에서 상품 정보 가져오는 기능
 - **ohouse_crawling.js** : 상품 정보를 통해 오늘의집에서 크롤링 + 순위 조회 기능
 - **send_data_to_sheet.js** : 구글 시트에서 상품 정보 가져와서 오늘의집에서 크롤링 + 순위 조회 후 구글 시트에 자동 기록 기능(통합)
-- **ohouse_final_app.js** : Apps Script에서 호출되어 서버와 연동해서 전체 과정 자동 실행(main)
+- **ohouse_final_app.js** : Apps Script에서 호출되어 서버와 연동해서 전체 과정 자동 실행(main) 
