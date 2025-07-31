@@ -2,7 +2,7 @@
   "name": "ohousecrawler",
   "version": "1.0.0",
   "description": "",
-  "main": "google_sheets_data.js",
+  "main": "ohouse_final_app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
