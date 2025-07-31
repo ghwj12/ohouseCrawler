@@ -107,9 +107,8 @@ async function getRankFromOhouse(keyword, mid, browser) {
           window.scrollBy(0, window.innerHeight);
         });
 
-        await sleep(500);
+        await sleep(400);
       }
-
     }
   } catch (e) {
     console.error(`getRankFromOhouse 에러:`, e);
@@ -233,7 +232,7 @@ app.post("/ohouse_trigger", async (req, res) => {
 
     browser = await puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
 
     let ranks = [];
