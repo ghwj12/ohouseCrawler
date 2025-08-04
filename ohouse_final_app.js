@@ -100,22 +100,15 @@ async function safeFetchCookies(keyword, browser) {
   }
 }
 
-// 시트에서 (keyword, mid) 쭉 읽어오기
+// 구글 시트에서 (keyword, mid) 쭉 읽어오기
 async function getRowsFromSheet(sheets, spreadsheetId, sheetName) {
   const range = `${sheetName}!G7:H`;
   const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
   return res.data.values || [];
 }
 
-// 시트에 결과 업데이트
-async function sendDataToSheet(sheets, ranks, sheetId, sheetName, spreadsheetId) {
-  // 시간 문자열
-  const now = new Date()
-    .toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hour12: false })
-    .slice(2, 16).replace("T", "");
-  const values = [[now], ...ranks];
-  const writeRange = `${sheetName}!I6:I${6 + ranks.length}`;
-  // 열 삽입 + 색 지정
+// 구글 시트에 열 추가
+async function addColumnInSheet(sheets, sheetId, spreadsheetId) {
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
@@ -147,7 +140,15 @@ async function sendDataToSheet(sheets, ranks, sheetId, sheetName, spreadsheetId)
       ]
     }
   });
-  // 순위 업데이트
+}
+
+// 구글 시트에 순위 업데이트
+async function sendDataToSheet(sheets, ranks, sheetName, spreadsheetId) {
+  const now = new Date()
+    .toLocaleString("sv-SE", { timeZone: "Asia/Seoul", hour12: false })
+    .slice(2, 16).replace("T", "");
+  const values = [[now], ...ranks];
+  const writeRange = `${sheetName}!I6:I${6 + ranks.length}`;
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: writeRange,
@@ -185,6 +186,9 @@ app.post("/ohouse_trigger", async (req, res) => {
 
     console.log("순위 조회 시작!");
 
+    // 구글 시트에 열 추가
+    addColumnInSheet(sheets, sheetId, spreadsheetId);
+
     browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
@@ -206,8 +210,8 @@ app.post("/ohouse_trigger", async (req, res) => {
     const merged = Object.assign({}, ...results);
     const ranks = rows.map(([kw, mid]) => [merged[mid] || ""]);
 
-    // 구글 시트에 업데이트
-    await sendDataToSheet(sheets, ranks, sheetId, sheetName, spreadsheetId);
+    // 구글 시트에 순위 업데이트
+    await sendDataToSheet(sheets, ranks, sheetName, spreadsheetId);
     console.log("순위 업데이트 완료!");
     return res.json({ status: "success" });
   } catch (e) {
