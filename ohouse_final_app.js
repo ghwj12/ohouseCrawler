@@ -1,124 +1,28 @@
-const express = require("express");
-const bodyParser = require("body-parser");
+const puppeteer = require("puppeteer");
+const axios = require("axios");
+const pLimit = require("p-limit");
 const { google } = require("googleapis");
 const path = require("path");
-const puppeteer = require("puppeteer");
+const express = require("express");
+const bodyParser = require("body-parser");
 
 const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(bodyParser.json());
 
-// 오늘의 집에서 순위 조회하는 함수
-async function getRankFromOhouse(keyword, mid, browser) {
-  const page = await browser.newPage();
-  let rank = "";
-  try {
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    );
-    await page.goto("https://store.ohou.se/", { waitUntil: "networkidle2" });
+const FEED_API_URL = "https://ohou.se/productions/feed.json";
+const SEARCH_AFFECT_TYPE = "Typing";
+const V = 7;
+const PER_PAGE = 20;
+const MAX_PAGES = 75; // 20*75 = 1500위까지
+const MAX_CONCURRENCY = 3; // 최대 3키워드 병렬
 
-    // keyword가 유효한 경우만 검색
-    if (keyword !== undefined && keyword !== null && keyword !== "") {
-      const inputSelector =
-        "input[placeholder='쇼핑 검색'].css-1pneado.e1rynmtb2";
-      await page.waitForSelector(inputSelector);
-      await page.type(inputSelector, keyword);
-      await page.keyboard.press("Enter");
-      console.log("키워드 검색 됨");
-
-      const totalUrls = new Set();
-      let found = false;
-      let repeatCount = 0;
-      const MAX_REPEAT = 100;
-      let prevLastFour = "";
-
-      while (!found) {
-        await page.waitForFunction(() => {
-          return (
-            document.querySelectorAll(
-              ".production-feed__item-wrap.col-6.col-md-4.col-lg-3"
-            ).length > 0
-          );
-        });
-
-        // 새로 추가된 상품 url만 수집
-        const newUrls = await page.evaluate(() => {
-          const elements = Array.from(
-            document.querySelectorAll(
-              ".production-feed__item-wrap.col-6.col-md-4.col-lg-3"
-            )
-          );
-          return elements
-            .map((el) => el.querySelector("a")?.getAttribute("href"))
-            .filter(Boolean);
-        });
-
-        // newUrls 마지막 4개 추출
-        const lastFour = newUrls.slice(-4).join(",");
-
-        // 직전과 같으면 카운트, 다르면 초기화
-        if (lastFour === prevLastFour) {
-          repeatCount++;
-        } else {
-          repeatCount = 1;
-          prevLastFour = lastFour;
-        }
-
-        if (repeatCount >= MAX_REPEAT) {
-          console.log(`keyword: ${keyword}, mid: ${mid} 해당 상품 없음`);
-          break;
-        }
-
-        // 중복없이 순서대로 저장
-        for (const url of newUrls) {
-          totalUrls.add(url);
-        }
-
-        // 순위 계산
-        for (let url of totalUrls) {
-          const match = url.match(/productions\/(\d+).*affect_id=(\d+)/);
-          if (match && match[1] === mid) {
-            rank = match[2];
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
-
-        // 순위 1500위까지 조회
-        const lastNewUrl = newUrls
-          .slice(-1)
-          .join(",")
-          .match(/affect_id=(\d+)/);
-
-        if (lastNewUrl && Number(lastNewUrl[1]) >= 1500) {
-          console.log(
-            `keyword: ${keyword}, mid: ${mid} 1500번째 상품까지 조회 결과 해당 상품 없음`
-          );
-          break;
-        }
-
-        // 스크롤 아래로
-        await page.evaluate(() => {
-          window.scrollBy(0, window.innerHeight);
-        });
-
-        await sleep(400);
-      }
-    }
-  } catch (e) {
-    console.error(`getRankFromOhouse 에러:`, e);
-  } finally {
-    await page.close();
-  }
-  return rank || "";
+function sleep(ms = 0) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-// 시트에 있는 데이터 가져오는 함수
+// 구글 시트에서 데이터 가져오기
 async function getRowsFromSheet(sheets, spreadsheetId, sheetName) {
   const range = `${sheetName}!G7:H`;
   const res = await sheets.spreadsheets.values.get({
@@ -128,25 +32,15 @@ async function getRowsFromSheet(sheets, spreadsheetId, sheetName) {
   return res.data.values || [];
 }
 
-// 시트에 순위 데이터 업데이트 하는 함수
-async function sendDataToSheet(
-  sheets,
-  ranks,
-  sheetId,
-  sheetName,
-  spreadsheetId
-) {
-  const writeRange = `${sheetName}!I6:I${6 + ranks.length}`;
-  const date = new Date();
-  const rankRowName = date
+async function sendDataToSheet(sheets, ranks, rowsCount, sheetId, sheetName, spreadsheetId) {
+  const now = new Date()
     .toLocaleString("sv-SE", { hour12: false, timeZone: "Asia/Seoul" })
     .slice(2, 16)
-    .replace("T", " ");
-  const values = [[rankRowName], ...ranks];
-  const colorCellRow = 5; // 6행(0부터 시작)
-  const colorCellCol = 8; // I열(0부터 시작)
+    .replace("T", "");
+  const values = [[now], ...ranks];
+  const writeRange = `${sheetName}!I6:I${6 + rowsCount}`;
 
-  // 새 열 삽입 + 서식 지정
+  // 열 삽입 + 서식 지정
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
@@ -154,10 +48,10 @@ async function sendDataToSheet(
         {
           insertDimension: {
             range: {
-              sheetId: sheetId,
+              sheetId,
               dimension: "COLUMNS",
-              startIndex: colorCellCol,
-              endIndex: colorCellCol + 1,
+              startIndex: 8,
+              endIndex: 9,
             },
             inheritFromBefore: false,
           },
@@ -165,30 +59,27 @@ async function sendDataToSheet(
         {
           repeatCell: {
             range: {
-              sheetId: sheetId,
-              startRowIndex: colorCellRow,
-              endRowIndex: colorCellRow + 1,
-              startColumnIndex: colorCellCol,
-              endColumnIndex: colorCellCol + 1,
+              sheetId,
+              startRowIndex: 5,
+              endRowIndex: 6,
+              startColumnIndex: 8,
+              endColumnIndex: 9,
             },
             cell: {
               userEnteredFormat: {
-                backgroundColor: {
-                  red: 1,
-                  green: 0.949,
-                  blue: 0.8,
-                },
-                horizontalAlignment: "center",
+                backgroundColor: { red: 1, green: 0.949, blue: 0.8 },
+                horizontalAlignment: "CENTER",
               },
             },
-            fields: "userEnteredFormat.backgroundColor",
+            fields:
+              "userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment",
           },
         },
       ],
     },
   });
 
-  // 시트에 데이터 입력
+  // 값 업데이트
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: writeRange,
@@ -197,8 +88,76 @@ async function sendDataToSheet(
   });
 }
 
-function sleep(ms = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+//최신 쿠키 가져오기
+async function fetchBrowserCookies() {
+  let browser;
+  try{
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
+    await page.goto("https://ohou.se", { waitUntil: "networkidle2" });
+    const cookies = await page.cookies();
+    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  } catch (e) {
+    console.error("fetchBrowserCookies 실패:", e);
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
+// feed.json 호출 & 순위 계산
+async function getRanksViaFeedApi(keyword, mids, cookieHeader) {
+  const rankMap = {};
+  mids.forEach((mid) => (rankMap[mid] = ""));
+  if (!keyword) return rankMap;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const params = {
+      v: V,
+      query: keyword,
+      search_affect_type: SEARCH_AFFECT_TYPE,
+      page,
+      per: PER_PAGE,
+    };
+    let data;
+    try {
+      const res = await axios.get(FEED_API_URL, {
+        params,
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "User-Agent": "Mozilla/5.0",
+          Referer: "https://ohou.se/",
+          Origin: "https://ohou.se",
+          Cookie: cookieHeader,
+        },
+      });
+      data = res.data;
+    } catch (e) {
+      console.warn(`[${keyword}] page=${page} 호출 실패: ${e.message}`);
+      break;
+    }
+
+    const prods = Array.isArray(data.productions)
+      ? data.productions
+      : data.result?.productions || [];
+
+    if (!prods.length) break;
+
+    prods.forEach((p, idx) => {
+      const id = String(p.productionId || p.id || p.production?.id || "");
+      if (id && id in rankMap && rankMap[id] === "") {
+        rankMap[id] = String((page - 1) * PER_PAGE + idx + 1);
+      }
+    });
+
+    if (mids.every((mid) => rankMap[mid] !== "")) break;
+    await sleep(100);
+  }
+
+  // console.log(`[${keyword}] 결과:`, mids.map(m=>`${m}:${rankMap[m]||"-"}`).join(" , "));
+  return rankMap;
 }
 
 // POST 요청 받는 엔드포인트
@@ -208,8 +167,8 @@ app.post("/ohouse_trigger", async (req, res) => {
     return res.status(400).json({ error: "필수값 누락" });
   }
 
-  let browser, page, auth;
-  try {
+  let auth;
+  try{
     // 구글 인증
     if (process.env.GOOGLE_KEY_JSON) {
       // 환경변수에 JSON이 있으면 credentials 옵션
@@ -226,27 +185,39 @@ app.post("/ohouse_trigger", async (req, res) => {
       });
     }
     const sheets = google.sheets({ version: "v4", auth });
-
-    // 시트 데이터 읽기
+  
+    // 구글 시트에서 데이터 가져오기
     const rows = await getRowsFromSheet(sheets, spreadsheetId, sheetName);
-
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
-
-    let ranks = [];
-    for (const [keyword, mid] of rows) {
-      const rank = await getRankFromOhouse(keyword, mid, browser);
-      ranks.push([rank]);
-      console.log(`keyword: ${keyword}, mid: ${mid}, rank: ${rank}`);
+    if (!rows.length) {
+      console.log("조회할 데이터가 없습니다.");
+      return;
     }
-    await browser.close();
-    console.log("순위 조회 완료!");
-
-    await sendDataToSheet(sheets, ranks, sheetId, sheetName, spreadsheetId);
+  
+    // 키워드별 그룹핑
+    const groups = rows.reduce((acc, [kw, mid]) => {
+      (acc[kw] = acc[kw] || []).push(mid);
+      return acc;
+    }, {});
+  
+    console.log("순위 조회 시작!");
+  
+    // 최신 쿠키 가져오기(한 번만)
+    const cookieHeader = await fetchBrowserCookies();
+  
+    // feed.json 호출 & 순위 계산(병렬 처리)
+    const limit = pLimit(MAX_CONCURRENCY);
+    const tasks = Object.entries(groups).map(([kw, mids]) =>
+      limit(() => getRanksViaFeedApi(kw, mids, cookieHeader))
+    );
+    const results = await Promise.all(tasks);
+  
+    // 결과 합치고 원본 순서대로 ranks 배열 생성
+    const allMap = Object.assign({}, ...results);
+    const ranks = rows.map(([_, mid]) => [allMap[mid] || ""]);
+  
+    // 구글 시트에 기록
+    await sendDataToSheet(sheets, ranks, rows.length, sheetId,  sheetName,  spreadsheetId);
     console.log("순위 업데이트 완료!");
-
     return res.json({ status: "success" });
   } catch (e) {
     if (browser) await browser.close();
