@@ -4,8 +4,6 @@ const { google } = require("googleapis");
 const path = require("path");
 const express = require("express");
 const bodyParser = require("body-parser");
-const chromium = require("chrome-aws-lambda");
-const pptr     = require("puppeteer-core");
 
 const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
 const app = express();
@@ -18,6 +16,31 @@ const V = 7;
 const PER_PAGE = 20;
 const MAX_PAGES = 75; // 20*75 = 1500위까지
 const MAX_CONCURRENCY = 3; // 최대 3키워드 병렬
+
+const isProd = process.env.NODE_ENV === "production";
+
+let browserLauncher;
+if (isProd) {
+  // B안: 서버리스 크롬
+  const chromium = require("chrome-aws-lambda");
+  const pptr     = require("puppeteer-core");
+  browserLauncher = async () => {
+    return await pptr.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
+    });
+  };
+} else {
+  // 로컬 개발: puppeteer 사용
+  const pptr = require("puppeteer");
+  browserLauncher = async () => {
+    return await pptr.launch({
+      headless: true,
+      args: ["--no-sandbox","--disable-setuid-sandbox"],
+    });
+  };
+}
 
 function sleep(ms = 0) {
   return new Promise((r) => setTimeout(r, ms));
@@ -93,11 +116,7 @@ async function sendDataToSheet(sheets, ranks, rowsCount, sheetId, sheetName, spr
 async function fetchBrowserCookies() {
   let browser;
   try{
-    browser = await pptr.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath,
-      headless: chromium.headless,
-    });
+    browser = await browserLauncher();
     const page = await browser.newPage();
     await page.goto("https://ohou.se", { waitUntil: "networkidle2" });
     const cookies = await page.cookies();
