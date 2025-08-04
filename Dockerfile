@@ -10,6 +10,16 @@ RUN apt-get update && apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     libgbm1 \
+    libxshmfence1 \
+    libasound2 \
+    libdbus-1-3 \
+    libgtk-3-0 \
+    libpangocairo-1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libxcb1 \
+    libx11-xcb1 \
   && rm -rf /var/lib/apt/lists/*
 
 # 3. 작업 디렉토리 설정
@@ -26,7 +36,7 @@ COPY . .
 # ENV NODE_ENV=production
 
 # 7. 컨테이너가 외부에 오픈할 포트
-EXPOSE 3000
+EXPOSE 8080
 
 # 8. 컨테이너 시작 명령
 CMD ["node", "ohouse_final_app.js"]
