@@ -1,10 +1,11 @@
-const puppeteer = require("puppeteer");
 const axios = require("axios");
 const pLimit = require("p-limit");
 const { google } = require("googleapis");
 const path = require("path");
 const express = require("express");
 const bodyParser = require("body-parser");
+const chromium = require("chrome-aws-lambda");
+const pptr     = require("puppeteer-core");
 
 const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
 const app = express();
@@ -92,9 +93,10 @@ async function sendDataToSheet(sheets, ranks, rowsCount, sheetId, sheetName, spr
 async function fetchBrowserCookies() {
   let browser;
   try{
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    browser = await pptr.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
     });
     const page = await browser.newPage();
     await page.goto("https://ohou.se", { waitUntil: "networkidle2" });

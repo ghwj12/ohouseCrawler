@@ -19,10 +19,11 @@
   "homepage": "https://github.com/ghwj12/ohouseCrawler#readme",
   "dependencies": {
     "axios": "^1.11.0",
+    "chrome-aws-lambda": "^10.1.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "googleapis": "^154.1.0",
     "p-limit": "^3.1.0",
-    "puppeteer": "^24.15.0"
+    "puppeteer-core": "^10.1.0"
   }
 }
