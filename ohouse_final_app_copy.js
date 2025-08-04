@@ -94,7 +94,7 @@ async function safeFetchCookies(keyword, browser) {
     try {
       return await fetchSearchCookiesAndClose(keyword, browser);
     } catch (err) {
-      // console.warn(`fetchCookies 실패 (${i}/${MAX_TRIES}): ${err.message}`);
+      console.warn(`fetchCookies 실패 (${i}/${MAX_TRIES}): ${err.message}`);
       if (i === MAX_TRIES) throw err;
     }
   }
@@ -218,5 +218,5 @@ app.post("/ohouse_trigger", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`서버 실행중 포트: ${PORT}`);
+  console.log(`서버 실행 중 (포트 ${PORT})`);
 });
